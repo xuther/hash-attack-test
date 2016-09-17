@@ -4,6 +4,7 @@ import (
 	"crypto/sha1"
 	"fmt"
 	"math/rand"
+	"os"
 	"time"
 )
 
@@ -16,19 +17,37 @@ const (
 	letterIdxMax  = 63 / letterIdxBits   // # of letter indices fitting in 63 bits
 )
 
-func generateBirthdayCollision(length int) (string, string, string) {
-	triedHashes := make(map[string]string)
+func generatePreImageAttack(length int) (string, string, string, int) {
+	OrigVal := getRandomString(55)
+	Orighash := string(shaWrapper(OrigVal, length))
+	count := 0
 
 	for true {
+		count = count + 1
+		strVal := getRandomString(55)
+		hash := string(shaWrapper(strVal, length))
+		if hash == Orighash {
+			return OrigVal, strVal, hash, count
+		}
+	}
+	return "", "", "", count
+}
+
+func generateBirthdayCollision(length int) (string, string, string, int) {
+	triedHashes := make(map[string]string)
+	count := 0
+
+	for true {
+		count = count + 1
 		strVal := getRandomString(55)
 		hash := string(shaWrapper(strVal, length))
 		if val, ok := triedHashes[hash]; ok {
-			return val, strVal, hash
+			return val, strVal, hash, count
 		}
 
 		triedHashes[hash] = strVal
 	}
-	return "", "", ""
+	return "", "", "", count
 }
 
 func getRandomString(n int) string {
@@ -55,14 +74,12 @@ func shaWrapper(toHash string, length int) []byte {
 	bitsPreProc := sha1.Sum([]byte(toHash))
 
 	remain := length % 8
-	fmt.Printf("length: %v, remain: %v\n", length, remain)
 	if remain == 0 {
 		return bitsPreProc[:(length / 8)]
 	}
 
 	//now we need to mask the number of
 	bitsPostProc := bitsPreProc[:(length/8)+1]
-	fmt.Printf("Bits: %s\n", string(bitsPostProc))
 	//Could do something other than switch (some sort of loop) but this seems simpler
 	switch remain {
 	case 1:
@@ -87,12 +104,38 @@ func shaWrapper(toHash string, length int) []byte {
 		bitsPostProc[len(bitsPostProc)-1] &= 0x7f
 		break
 	}
-	fmt.Printf("Bits: %+v\n", bitsPostProc)
 	return bitsPostProc
 }
 
+func avgAttempts(values []int) float64 {
+	running := 0
+	for i := 0; i < len(values); i++ {
+		running = running + values[i]
+	}
+
+	return float64(running) / float64(len(values))
+}
+
 func main() {
-	fmt.Printf("Test")
-	val1, val2, hash := generateBirthdayCollision(4)
-	fmt.Printf("%v, %v, %x", val1, val2, hash)
+
+	f, err := os.Create("deviation.txt")
+	if err != nil {
+		panic(err)
+	}
+	attempts := []int{}
+
+	defer f.Close()
+	N := 10000
+	fmt.Fprintf(f, "%v\t%v\t%v\t%v\t%v\t%v\n", "attempts", "Length", "Hash1", "Hash2", "String1", "String2")
+
+	for i := 0; i < N; i++ {
+		preTimestamp := time.Now()
+		_, _, _, attempt := generateBirthdayCollision(24)
+		d := time.Since(preTimestamp)
+
+		fmt.Fprintf(f, "%v\t%v\n", attempt, d.Nanoseconds())
+		attempts = append(attempts, attempt)
+	}
+
+	fmt.Printf("%v \t %v", N, avgAttempts(attempts))
 }
